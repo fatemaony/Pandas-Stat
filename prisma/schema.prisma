@@ -7,10 +7,45 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
 enum UserRole {
   USER
   ADMIN
 }
+
+enum DatasetStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  ERROR
+}
+
+enum TrainingRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AnalysisJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ValidationStatus {
+  OK
+  WARN
+  FAIL
+}
+
+// ─────────────────────────────────────────────
+// BETTER AUTH MODELS (EXISTING — DO NOT MODIFY)
+// ─────────────────────────────────────────────
 
 model User {
   id             String   @id @default(uuid())
@@ -28,6 +63,7 @@ model User {
 
   sessions Session[]
   accounts Account[]
+  projects Project[]
 
   @@map("users")
 }
@@ -82,3 +118,273 @@ model Verification {
   @@map("verifications")
 }
 
+// ─────────────────────────────────────────────
+// PROJECT & DATASET MODELS
+// ─────────────────────────────────────────────
+
+model Project {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  name        String
+  description String?
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  datasets     Dataset[]
+  chatMessages ChatMessage[]
+  trainingRuns TrainingRun[]
+  savedCharts  SavedChart[]
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model Dataset {
+  id            String        @id @default(uuid())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  name          String
+  fileName      String
+  fileType      String
+  fileSizeBytes Int
+  fileUrl       String
+  parquetUrl    String?
+  columns       Json?
+  rowCount      Int?
+  colCount      Int?
+  checksum      String?
+  status        DatasetStatus @default(UPLOADED)
+
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  previews            DatasetPreview[]
+  variableProfiles    VariableProfile[]
+  validationReports   ValidationReport[]
+  preprocessPipelines PreprocessPipeline[]
+  analysisJobs        AnalysisJob[]
+  trainingRuns        TrainingRun[]
+
+  @@index([projectId])
+  @@map("datasets")
+}
+
+// ─────────────────────────────────────────────
+// STATISTICAL ENGINE MODELS
+// ─────────────────────────────────────────────
+
+model DatasetPreview {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+
+  previewJson Json
+
+  datasetId   String
+  dataset     Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId])
+  @@map("dataset_previews")
+}
+
+model VariableProfile {
+  id           String  @id @default(uuid())
+
+  columnName   String
+  detectedType String
+  userOverride String?
+  statsJson    Json?
+
+  datasetId    String
+  dataset      Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@unique([datasetId, columnName])
+  @@map("variable_profiles")
+}
+
+model ValidationReport {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+
+  reportJson Json
+
+  datasetId  String
+  dataset    Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId])
+  @@map("validation_reports")
+}
+
+model PreprocessPipeline {
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now())
+
+  version      Int      @default(1)
+  pipelineJson Json
+
+  datasetId    String
+  dataset      Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId])
+  @@map("preprocess_pipelines")
+}
+
+// ─────────────────────────────────────────────
+// ML TRAINING MODELS
+// ─────────────────────────────────────────────
+
+model TrainingRun {
+  id            String            @id @default(uuid())
+  createdAt     DateTime          @default(now())
+
+  taskType      String
+  algorithm     String
+  hyperparams   Json
+  metrics       Json?
+  modelArtifact String?
+  status        TrainingRunStatus @default(PENDING)
+
+  projectId     String
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  datasetId     String
+  dataset       Dataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([datasetId])
+  @@map("training_runs")
+}
+
+// ─────────────────────────────────────────────
+// STATISTICAL ANALYSIS PIPELINE MODELS
+// ─────────────────────────────────────────────
+
+model AnalysisJob {
+  id              String            @id @default(uuid())
+  createdAt       DateTime          @default(now())
+  finishedAt      DateTime?
+
+  pipelineVersion Int?
+  status          AnalysisJobStatus @default(PENDING)
+  currentStage    String?
+  errorMessage    String?
+
+  datasetId       String
+  dataset         Dataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  testSelections  TestSelection[]
+  result          AnalysisResult?
+  reports         Report[]
+
+  @@index([datasetId])
+  @@map("analysis_jobs")
+}
+
+model TestSelection {
+  id              String      @id @default(uuid())
+
+  testId          String
+  assumptionsJson Json
+  fallbackTestId  String?
+
+  analysisJobId   String
+  analysisJob     AnalysisJob @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+
+  @@index([analysisJobId])
+  @@map("test_selections")
+}
+
+model AnalysisResult {
+  id               String           @id @default(uuid())
+  createdAt        DateTime         @default(now())
+
+  resultJson       Json
+  validationStatus ValidationStatus @default(OK)
+
+  analysisJobId    String           @unique
+  analysisJob      AnalysisJob      @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+
+  visualizations   Visualization[]
+  interpretation   Interpretation?
+
+  @@map("analysis_results")
+}
+
+model Visualization {
+  id               String         @id @default(uuid())
+  createdAt        DateTime       @default(now())
+
+  chartType        String
+  chartJsonPath    String
+  thumbnailPath    String?
+
+  analysisResultId String
+  analysisResult   AnalysisResult @relation(fields: [analysisResultId], references: [id], onDelete: Cascade)
+
+  @@index([analysisResultId])
+  @@map("visualizations")
+}
+
+model Interpretation {
+  id               String         @id @default(uuid())
+  createdAt        DateTime       @default(now())
+
+  content          String
+  markdownPath     String?
+
+  analysisResultId String         @unique
+  analysisResult   AnalysisResult @relation(fields: [analysisResultId], references: [id], onDelete: Cascade)
+
+  @@map("interpretations")
+}
+
+model Report {
+  id            String      @id @default(uuid())
+  generatedAt   DateTime    @default(now())
+
+  pdfPath       String
+  format        String      @default("pdf")
+
+  analysisJobId String
+  analysisJob   AnalysisJob @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+
+  @@index([analysisJobId])
+  @@map("reports")
+}
+
+// ─────────────────────────────────────────────
+// CHAT & VISUALIZATION MODELS
+// ─────────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  role      String
+  content   String   @db.Text
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("chat_messages")
+}
+
+model SavedChart {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  title      String
+  chartType  String
+  configJson Json
+
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("saved_charts")
+}
