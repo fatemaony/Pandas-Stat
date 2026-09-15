@@ -44,13 +44,14 @@ enum ValidationStatus {
 }
 
 // ─────────────────────────────────────────────
-// BETTER AUTH MODELS (EXISTING — DO NOT MODIFY)
+// BETTER AUTH MODELS
 // ─────────────────────────────────────────────
 
 model User {
-  id             String   @id @default(uuid())
+  id             String    @id @default(cuid())
   createdAt      DateTime
   updatedAt      DateTime
+  deletedAt      DateTime?
 
   name          String
   email         String    @unique
@@ -61,15 +62,16 @@ model User {
   banReason     String?
   banExpires    DateTime?
 
-  sessions Session[]
-  accounts Account[]
-  projects Project[]
+  sessions  Session[]
+  accounts  Account[]
+  projects  Project[]
+  auditLogs AuditLog[]
 
   @@map("users")
 }
 
 model Session {
-  id             String   @id @default(uuid())
+  id             String   @id @default(cuid())
   createdAt      DateTime
   updatedAt      DateTime
 
@@ -86,7 +88,7 @@ model Session {
 }
 
 model Account {
-  id        String   @id @default(uuid())
+  id        String   @id @default(cuid())
   createdAt DateTime
   updatedAt DateTime
 
@@ -107,7 +109,7 @@ model Account {
 }
 
 model Verification {
-  id        String    @id @default(uuid())
+  id        String    @id @default(cuid())
   createdAt DateTime?
   updatedAt DateTime?
 
@@ -119,19 +121,44 @@ model Verification {
 }
 
 // ─────────────────────────────────────────────
+// AUDIT LOGGING MODEL
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
 // PROJECT & DATASET MODELS
 // ─────────────────────────────────────────────
 
 model Project {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
   name        String
   description String?
 
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   datasets     Dataset[]
   chatMessages ChatMessage[]
@@ -143,9 +170,10 @@ model Project {
 }
 
 model Dataset {
-  id            String        @id @default(uuid())
+  id            String        @id @default(cuid())
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
 
   name          String
   fileName      String
@@ -178,20 +206,22 @@ model Dataset {
 // ─────────────────────────────────────────────
 
 model DatasetPreview {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   previewJson Json
 
-  datasetId   String
-  dataset     Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  datasetId String
+  dataset   Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
 
   @@index([datasetId])
   @@map("dataset_previews")
 }
 
 model VariableProfile {
-  id           String  @id @default(uuid())
+  id        String    @id @default(cuid())
+  deletedAt DateTime?
 
   columnName   String
   detectedType String
@@ -206,27 +236,29 @@ model VariableProfile {
 }
 
 model ValidationReport {
-  id         String   @id @default(uuid())
-  createdAt  DateTime @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   reportJson Json
 
-  datasetId  String
-  dataset    Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  datasetId String
+  dataset   Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
 
   @@index([datasetId])
   @@map("validation_reports")
 }
 
 model PreprocessPipeline {
-  id           String   @id @default(uuid())
-  createdAt    DateTime @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
-  version      Int      @default(1)
+  version      Int     @default(1)
   pipelineJson Json
 
   datasetId    String
-  dataset      Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  dataset      Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
 
   @@index([datasetId])
   @@map("preprocess_pipelines")
@@ -237,8 +269,9 @@ model PreprocessPipeline {
 // ─────────────────────────────────────────────
 
 model TrainingRun {
-  id            String            @id @default(uuid())
-  createdAt     DateTime          @default(now())
+  id        String            @id @default(cuid())
+  createdAt DateTime          @default(now())
+  deletedAt DateTime?
 
   taskType      String
   algorithm     String
@@ -263,9 +296,10 @@ model TrainingRun {
 // ─────────────────────────────────────────────
 
 model AnalysisJob {
-  id              String            @id @default(uuid())
+  id              String            @id @default(cuid())
   createdAt       DateTime          @default(now())
   finishedAt      DateTime?
+  deletedAt       DateTime?
 
   pipelineVersion Int?
   status          AnalysisJobStatus @default(PENDING)
@@ -284,7 +318,8 @@ model AnalysisJob {
 }
 
 model TestSelection {
-  id              String      @id @default(uuid())
+  id        String    @id @default(cuid())
+  deletedAt DateTime?
 
   testId          String
   assumptionsJson Json
@@ -298,8 +333,9 @@ model TestSelection {
 }
 
 model AnalysisResult {
-  id               String           @id @default(uuid())
-  createdAt        DateTime         @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   resultJson       Json
   validationStatus ValidationStatus @default(OK)
@@ -314,8 +350,9 @@ model AnalysisResult {
 }
 
 model Visualization {
-  id               String         @id @default(uuid())
-  createdAt        DateTime       @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   chartType        String
   chartJsonPath    String
@@ -329,8 +366,9 @@ model Visualization {
 }
 
 model Interpretation {
-  id               String         @id @default(uuid())
-  createdAt        DateTime       @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   content          String
   markdownPath     String?
@@ -342,8 +380,9 @@ model Interpretation {
 }
 
 model Report {
-  id            String      @id @default(uuid())
-  generatedAt   DateTime    @default(now())
+  id          String    @id @default(cuid())
+  generatedAt DateTime  @default(now())
+  deletedAt   DateTime?
 
   pdfPath       String
   format        String      @default("pdf")
@@ -360,23 +399,25 @@ model Report {
 // ─────────────────────────────────────────────
 
 model ChatMessage {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   role      String
-  content   String   @db.Text
+  content   String    @db.Text
 
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("chat_messages")
 }
 
 model SavedChart {
-  id         String   @id @default(uuid())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   title      String
   chartType  String
