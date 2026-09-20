@@ -41,3 +41,12 @@ yarn-error.log*
 next-env.d.ts
 
 /lib/generated/prisma
+
+# python / stat-engine
+stat-engine/.venv/
+stat-engine/uploads/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
